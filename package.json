@@ -1,0 +1,14 @@
+{
+  "name": "wavelength-gestures",
+  "version": "0.1.0",
+  "description": "Single-player gestural synthesizer. MediaPipe hand tracking + Tone.js.",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  }
+}

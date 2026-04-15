@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>wavelength gestures</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+</head>
+<body>
+  <video id="camera" playsinline autoplay muted></video>
+
+  <div id="stage">
+    <canvas id="scene"></canvas>
+  </div>
+
+  <div id="overlay">
+    <div id="tooltip" class="hidden"></div>
+    <div id="pip" class="hidden">
+      <video id="pip-video" playsinline autoplay muted></video>
+    </div>
+  </div>
+
+  <div id="controls">
+    <button class="ctrl" id="btn-mic" data-tip="mic" aria-label="toggle mic">
+      <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.2">
+        <rect x="7" y="3" width="6" height="10" rx="3"/>
+        <path d="M4 10a6 6 0 0 0 12 0"/>
+        <line x1="10" y1="16" x2="10" y2="19"/>
+      </svg>
+      <span class="meter"></span>
+    </button>
+
+    <button class="ctrl record" id="btn-record" data-tip="record" aria-label="record">
+      <span class="dot"></span>
+    </button>
+
+    <button class="ctrl" id="btn-camera" data-tip="camera" aria-label="toggle camera preview">
+      <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.2">
+        <rect x="2" y="5" width="13" height="10" rx="1"/>
+        <path d="M15 8 L18 6 L18 14 L15 12 Z"/>
+      </svg>
+    </button>
+  </div>
+
+  <div id="begin">
+    <button id="begin-btn" aria-label="tap to begin"></button>
+    <p id="begin-msg">allow camera when prompted</p>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

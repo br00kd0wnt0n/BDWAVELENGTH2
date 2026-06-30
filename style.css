@@ -188,3 +188,16 @@ html, body {
   color: var(--stroke-dim);
   font-size: 10px;
 }
+
+#session-badge {
+  position: fixed;
+  top: 14px;
+  right: 18px;
+  font-size: 9px;
+  letter-spacing: 0.28em;
+  color: rgba(255,255,255,0.12);
+  z-index: 15;
+  pointer-events: none;
+  user-select: none;
+}
+#session-badge.hidden { display: none; }

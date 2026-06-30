@@ -21,9 +21,8 @@ const state = {
   activeScale: 'MINOR',
   strings: [],
   stringNotes: BASE_STRING_NOTES.slice(),
-  stringFilter: null,
-  stringReverb: null,
-  stringDelay: null,
+  bassFilter: null, bassReverb: null, bassDelay: null, bassPanner: null,
+  trebleChorus: null, trebleDelay: null, treblePanner: null,
   keys: null,
   keyChorus: null,
   keyReverb: null,
@@ -50,19 +49,27 @@ function init() {
   state.destStream = Tone.context.createMediaStreamDestination();
   Tone.Destination.connect(state.destStream);
 
-  // String chain
-  state.stringDelay = new Tone.FeedbackDelay({ delayTime: '8n', feedback: 0.3, wet: 0.2 });
-  state.stringReverb = new Tone.Reverb({ decay: 3.2, wet: 0.25 });
-  state.stringFilter = new Tone.Filter({ frequency: 3000, Q: 2, type: 'lowpass' });
-  state.stringFilter.chain(state.stringReverb, state.stringDelay, state.master);
+  // Bass chain (left strings 0-5): warm, sustained, filtered low, panned left
+  state.bassFilter = new Tone.Filter({ frequency: 2200, Q: 1.5, type: 'lowpass' });
+  state.bassReverb = new Tone.Reverb({ decay: 4.8, wet: 0.38 });
+  state.bassDelay  = new Tone.FeedbackDelay({ delayTime: '4n', feedback: 0.18, wet: 0.14 });
+  state.bassPanner = new Tone.Panner(-0.3);
+  state.bassFilter.chain(state.bassReverb, state.bassDelay, state.bassPanner, state.master);
 
-  state.strings = BASE_STRING_NOTES.map(() => {
+  // Treble chain (right strings 6-11): bright, snappy, chorus shimmer, panned right
+  state.trebleChorus = new Tone.Chorus({ frequency: 1.8, delayTime: 3.5, depth: 0.45, wet: 0.35 }).start();
+  state.trebleDelay  = new Tone.FeedbackDelay({ delayTime: '8n', feedback: 0.32, wet: 0.26 });
+  state.treblePanner = new Tone.Panner(0.3);
+  state.trebleChorus.chain(state.trebleDelay, state.treblePanner, state.master);
+
+  state.strings = BASE_STRING_NOTES.map((_, i) => {
+    const isLeft = i < 6;
     const p = new Tone.PluckSynth({
-      attackNoise: 1,
-      dampening: 4000,
-      resonance: 0.98,
+      attackNoise: isLeft ? 0.5 : 1.6,
+      dampening:   isLeft ? 2600 : 7200,
+      resonance:   isLeft ? 0.99 : 0.96,
     });
-    p.connect(state.stringFilter);
+    p.connect(isLeft ? state.bassFilter : state.trebleChorus);
     return p;
   });
 
@@ -147,14 +154,15 @@ function setFader(which, value) {
   state.faders[which] = value;
   if (!state.ready) return;
   if (which === 'cutoff') {
-    state.stringFilter.frequency.rampTo(200 + value * 8000, 0.03);
+    state.bassFilter.frequency.rampTo(200 + value * 4000, 0.03);
   } else if (which === 'resonance') {
-    state.stringFilter.Q.rampTo(0.5 + value * 14, 0.03);
+    state.bassFilter.Q.rampTo(0.5 + value * 14, 0.03);
   } else if (which === 'reverbWet') {
-    state.stringReverb.wet.rampTo(value, 0.05);
+    state.bassReverb.wet.rampTo(value * 0.6, 0.05);
     state.keyReverb.wet.rampTo(0.15 + value * 0.6, 0.05);
   } else if (which === 'delayFeedback') {
-    state.stringDelay.feedback.rampTo(0.1 + value * 0.6, 0.05);
+    state.bassDelay.feedback.rampTo(0.05 + value * 0.4, 0.05);
+    state.trebleDelay.feedback.rampTo(0.1 + value * 0.55, 0.05);
   }
 }
 

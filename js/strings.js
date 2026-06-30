@@ -7,11 +7,13 @@ let vp = { w: 0, h: 0 };
 
 // 12 strings: 0-5 left (bass), 6-11 right (treble).
 // Both sides share the same 6 Y positions; rendered as left/right halves.
-const states = Array.from({ length: 12 }, () => ({
+// Left (bass, 0-5): slower decay — more sustain and body
+// Right (treble, 6-11): faster decay — snappier, more percussive
+const states = Array.from({ length: 12 }, (_, i) => ({
   amplitude: 0,
   frequency: 220,
   lastTriggered: 0,
-  decayRate: 0.0025, // per ms
+  decayRate: i < 6 ? 0.0016 : 0.0038,
 }));
 
 let stringYs = [];

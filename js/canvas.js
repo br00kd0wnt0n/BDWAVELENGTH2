@@ -192,21 +192,22 @@ function drawStrings(c, stringStates, now) {
 
   for (let row = 0; row < yList.length; row++) {
     const y = yList[row];
-    drawStringSegment(c, states[row],      leftStart,  leftEnd,  y, now, N);
-    drawStringSegment(c, states[row + 6],  rightStart, rightEnd, y, now, N);
+    drawStringSegment(c, states[row],      leftStart,  leftEnd,  y, now, N, 'L');
+    drawStringSegment(c, states[row + 6],  rightStart, rightEnd, y, now, N, 'R');
   }
 }
 
-function drawStringSegment(c, s, x0, x1, y, now, N) {
+function drawStringSegment(c, s, x0, x1, y, now, N, side) {
   if (!s) return;
   const elapsed = now - (s.lastTriggered || 0);
   const amp = (s.amplitude || 0) * Math.exp(-(s.decayRate || 0.0025) * elapsed);
   const hue = freqToHue(s.frequency || 220);
+  const isLeft = side === 'L';
 
   if (amp < 0.5 || !s.lastTriggered) {
-    // Idle: very faint with subtle hue
-    c.strokeStyle = `hsla(${hue}, 25%, 45%, 0.12)`;
-    c.lineWidth = 0.5;
+    // Idle: left = thicker warm line, right = thin cool line
+    c.strokeStyle = `hsla(${hue}, ${isLeft ? 30 : 15}%, ${isLeft ? 42 : 52}%, ${isLeft ? 0.15 : 0.09})`;
+    c.lineWidth = isLeft ? 0.7 : 0.4;
     c.beginPath();
     c.moveTo(x0, y);
     c.lineTo(x1, y);
@@ -215,18 +216,22 @@ function drawStringSegment(c, s, x0, x1, y, now, N) {
   }
 
   const colorMix = Math.min(1, amp / 18);
-  c.lineWidth = 0.8 + colorMix * 0.6;
+  // Left: thicker, wider glow; Right: thinner, tighter glow
+  c.lineWidth = isLeft ? (1.0 + colorMix * 0.8) : (0.6 + colorMix * 0.4);
+  c.shadowBlur  = isLeft ? (10 + colorMix * 22) : (6 + colorMix * 12);
+  c.shadowColor = `hsla(${hue}, 80%, 55%, ${colorMix * (isLeft ? 0.8 : 0.6)})`;
+  c.strokeStyle = `hsla(${hue}, ${isLeft ? 70 : 80}%, ${isLeft ? 60 : 70}%, ${0.35 + colorMix * 0.6})`;
 
-  // Glow pass (wide, soft)
-  c.shadowBlur = 8 + colorMix * 18;
-  c.shadowColor = `hsla(${hue}, 80%, 55%, ${colorMix * 0.7})`;
-  c.strokeStyle = `hsla(${hue}, 75%, 65%, ${0.35 + colorMix * 0.6})`;
+  // Left: slow undulation; Right: faster, tighter vibration
+  const waveSpeed = isLeft ? 0.009 : 0.016;
+  const waveScale = isLeft ? 0.00015 : 0.00028;
+
   c.beginPath();
   for (let k = 0; k <= N; k++) {
-    const t = k / N;
-    const x  = x0 + (x1 - x0) * t;
+    const t   = k / N;
+    const x   = x0 + (x1 - x0) * t;
     const env = Math.sin(Math.PI * t);
-    const yy  = y + amp * env * Math.sin(x * (s.frequency || 220) * 0.0002 + elapsed * 0.012);
+    const yy  = y + amp * env * Math.sin(x * (s.frequency || 220) * waveScale + elapsed * waveSpeed);
     if (k === 0) c.moveTo(x, yy); else c.lineTo(x, yy);
   }
   c.stroke();

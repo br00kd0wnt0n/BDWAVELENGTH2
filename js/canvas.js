@@ -128,7 +128,7 @@ function draw({
   drawCameraBackground(c, videoEl);
 
   drawStrings(c, stringStates, now);
-  drawKeys(c, keyStates);
+  drawPads(c, keyStates);
   drawHitPoints(c, activeScale);
   drawFaders(c, faders, gestureState);
   drawFreeZone(c, activeZone);
@@ -233,56 +233,85 @@ function drawStringSegment(c, s, x0, x1, y, now, N) {
   c.shadowBlur = 0;
 }
 
-// ─── Keys ────────────────────────────────────────────────────────────────────
+// ─── Scale-degree pads ────────────────────────────────────────────────────────
 
-function drawKeys(c, keyStates) {
+function roundRect(c, x, y, w, h, r) {
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.lineTo(x + w - r, y);
+  c.quadraticCurveTo(x + w, y, x + w, y + r);
+  c.lineTo(x + w, y + h - r);
+  c.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  c.lineTo(x + r, y + h);
+  c.quadraticCurveTo(x, y + h, x, y + h - r);
+  c.lineTo(x, y + r);
+  c.quadraticCurveTo(x, y, x + r, y);
+  c.closePath();
+}
+
+function drawPads(c, keyStates) {
   if (!keyStates || !keyStates.layout) return;
-  const { whites, blacks } = keyStates.layout;
-  const hovered  = keyStates.hoveredIndex;
-  const active   = keyStates.activeNotes;
-  const scaleSet = keyStates.scaleNotes;
+  const { pads } = keyStates.layout;
+  const active   = keyStates.activePadIndices || new Set();
+  const keyNotes = keyStates.keyNotes || [];
+  const radius   = 6;
 
-  for (const w of whites) {
-    const isHovered = hovered === w.midi;
-    const isActive  = active && active.has(w.midi);
-    const inScale   = !scaleSet || scaleSet.has(w.midi);
-    let fill = COLORS.keyWhite;
-    if (!inScale)  fill = 'rgba(255,255,255,0.03)';
-    if (isHovered) fill = 'rgba(255,255,255,0.18)';
-    if (isActive)  fill = COLORS.keyActive;
-    c.fillStyle = fill;
-    c.fillRect(w.x, w.y, w.w, w.h);
-    c.strokeStyle = COLORS.dim;
-    c.lineWidth = 0.5;
-    c.strokeRect(w.x + 0.5, w.y + 0.5, w.w - 1, w.h - 1);
-    if (isHovered) {
-      c.fillStyle = COLORS.mid;
-      c.font = '8px "DM Mono", monospace';
-      c.textAlign = 'center';
-      c.fillText(w.name, w.x + w.w / 2, w.y - 4);
-    }
-  }
+  for (const pad of pads) {
+    const isActive = active.has(pad.index);
+    const midi     = keyNotes[pad.index] || 62;
+    // Frequency estimate for hue (MIDI → rough frequency)
+    const freq  = 440 * Math.pow(2, (midi - 69) / 12);
+    const hue   = freqToHue(freq);
 
-  for (const b of blacks) {
-    const isHovered = hovered === b.midi;
-    const isActive  = active && active.has(b.midi);
-    const inScale   = !scaleSet || scaleSet.has(b.midi);
-    let fill = COLORS.keyBlack;
-    if (!inScale)  fill = 'rgba(0,0,0,0.75)';
-    if (isHovered) fill = 'rgba(255,255,255,0.22)';
-    if (isActive)  fill = COLORS.keyActive;
-    c.fillStyle = fill;
-    c.fillRect(b.x, b.y, b.w, b.h);
-    c.strokeStyle = COLORS.keyBlackStroke;
-    c.lineWidth = 0.5;
-    c.strokeRect(b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1);
-    if (isHovered) {
-      c.fillStyle = COLORS.mid;
-      c.font = '8px "DM Mono", monospace';
-      c.textAlign = 'center';
-      c.fillText(b.name, b.x + b.w / 2, b.y - 4);
+    // Fill
+    c.fillStyle = isActive
+      ? `hsla(${hue}, 38%, 14%, 0.9)`
+      : 'rgba(255,255,255,0.04)';
+    roundRect(c, pad.x, pad.y, pad.w, pad.h, radius);
+    c.fill();
+
+    // Border + glow
+    if (isActive) {
+      c.shadowBlur  = 20;
+      c.shadowColor = `hsla(${hue}, 70%, 55%, 0.75)`;
     }
+    c.strokeStyle = isActive
+      ? `hsla(${hue}, 70%, 60%, 0.9)`
+      : 'rgba(255,255,255,0.14)';
+    c.lineWidth   = isActive ? 1.2 : 0.5;
+    roundRect(c, pad.x, pad.y, pad.w, pad.h, radius);
+    c.stroke();
+    c.shadowBlur = 0;
+
+    // Degree label (large)
+    const labelSize = Math.max(14, Math.floor(pad.h * 0.30));
+    c.font      = `${labelSize}px "DM Mono", monospace`;
+    c.textAlign = 'center';
+    c.shadowBlur  = 5;
+    c.shadowColor = 'rgba(0,0,0,0.9)';
+    c.fillStyle   = isActive
+      ? `hsl(${hue}, 80%, 72%)`
+      : 'rgba(255,255,255,0.45)';
+    c.fillText(pad.label, pad.x + pad.w / 2, pad.y + pad.h * 0.52);
+    c.shadowBlur = 0;
+
+    // MIDI note name (small, below degree)
+    const noteName = midiNoteName(midi);
+    c.font      = `${Math.max(9, Math.floor(pad.h * 0.14))}px "DM Mono", monospace`;
+    c.shadowBlur  = 4;
+    c.shadowColor = 'rgba(0,0,0,0.9)';
+    c.fillStyle   = isActive
+      ? `hsla(${hue}, 60%, 65%, 0.9)`
+      : 'rgba(255,255,255,0.22)';
+    c.fillText(noteName, pad.x + pad.w / 2, pad.y + pad.h * 0.78);
+    c.shadowBlur = 0;
   }
+}
+
+function midiNoteName(midi) {
+  const NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const oct = Math.floor(midi / 12) - 1;
+  return NAMES[midi % 12] + oct;
 }
 
 // ─── Scale hit points ─────────────────────────────────────────────────────────
@@ -312,10 +341,13 @@ function drawHitPoints(c, activeScale) {
     c.arc(x, y, active ? 2.5 : 1.5, 0, Math.PI * 2);
     c.fill();
 
-    c.fillStyle = active ? COLORS.bright : 'rgba(255,255,255,0.18)';
-    c.font = `${active ? 9 : 8}px "DM Mono", monospace`;
+    c.shadowBlur  = 5;
+    c.shadowColor = 'rgba(0,0,0,0.95)';
+    c.fillStyle   = active ? COLORS.bright : 'rgba(255,255,255,0.35)';
+    c.font = `${active ? 10 : 9}px "DM Mono", monospace`;
     c.textAlign = 'center';
     c.fillText(HIT_LABELS[i], x, y + 36);
+    c.shadowBlur = 0;
   }
 }
 
@@ -323,7 +355,7 @@ function drawHitPoints(c, activeScale) {
 
 function drawFaders(c, faders, gs) {
   if (!faders) return;
-  const trackW = 22;
+  const trackW = 42;
   const fadersBlockTop    = vp.h * LAYOUT.fadersTop;
   const fadersBlockBottom = vp.h * LAYOUT.fadersBottom;
   const fadersBlockH      = fadersBlockBottom - fadersBlockTop;
@@ -352,12 +384,15 @@ function drawFader(c, x, y, w, h, value, label, hovering, pinching) {
   c.strokeRect(x + 0.5, y + 0.5, w, h);
   const thumbY = y + h - h * Math.max(0, Math.min(1, value));
   c.fillStyle  = hovering ? COLORS.accent : COLORS.bright;
-  c.fillRect(x - 6, thumbY - 1.5, w + 12, 3);
+  c.fillRect(x - 8, thumbY - 2.5, w + 16, 5);
   if (label) {
-    c.fillStyle = hovering ? COLORS.bright : 'rgba(255,255,255,0.18)';
-    c.font = '8px "DM Mono", monospace';
+    c.shadowBlur  = 5;
+    c.shadowColor = 'rgba(0,0,0,0.9)';
+    c.fillStyle   = hovering ? COLORS.bright : 'rgba(255,255,255,0.40)';
+    c.font = '9px "DM Mono", monospace';
     c.textAlign = 'center';
-    c.fillText(label, x + w / 2, y - 4);
+    c.fillText(label, x + w / 2, y - 6);
+    c.shadowBlur = 0;
   }
 }
 

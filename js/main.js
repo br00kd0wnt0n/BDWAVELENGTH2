@@ -164,6 +164,7 @@ async function begin() {
   }
 
   wireControls();
+  wireCanvasClick();
 
   state.ready   = true;
   state.running = true;
@@ -173,6 +174,26 @@ async function begin() {
 }
 
 // ─── Controls ─────────────────────────────────────────────────────────────────
+
+// Click on the top hit-point band to change scale (reliable fallback for gesture tap)
+function wireCanvasClick() {
+  els.canvas.addEventListener('click', (e) => {
+    if (!state.ready) return;
+    const rect = els.canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top)  / rect.height;
+    if (y < 0.15) {
+      const order = audio.SCALE_ORDER;
+      const step  = 1 / (order.length + 1);
+      let nearest = 0, bestD = Infinity;
+      for (let i = 0; i < order.length; i++) {
+        const d = Math.abs(x - step * (i + 1));
+        if (d < bestD) { bestD = d; nearest = i; }
+      }
+      audio.applyScale(order[nearest]);
+    }
+  });
+}
 
 function wireControls() {
   els.btnMic.addEventListener('click', async () => {
@@ -235,7 +256,7 @@ function loop(ts) {
 
   audio.update(state.gestureState);
   strings.update(state.gestureState);
-  keys.update(state.gestureState);
+  keys.update(state.gestureState, state.allHands);
 
   // Broadcast hand positions every 3rd frame (≈20Hz)
   if (channel && state.allHands.length && state.frameCount % 3 === 0) {

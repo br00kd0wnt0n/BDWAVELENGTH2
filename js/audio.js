@@ -73,6 +73,7 @@ function init() {
   state.keys = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: 'fatsawtooth', count: 3, spread: 30 },
     envelope: { attack: 0.12, decay: 0.6, sustain: 0.7, release: 3.5 },
+    maxPolyphony: 8,
   }).connect(state.keyChorus);
   state.keys.volume.value = -10;
 
@@ -204,19 +205,16 @@ function update(gs) {
     setFader('delayFeedback', gs.spaceX);
   }
 
-  // Faders: pinch inside the left strip sets the value DIRECTLY from
-  // fingertip Y — no incremental dragging. Use the index fingertip x/y
-  // (not palm center) so the user doesn't have to swing their whole hand
-  // to the edge. Strip widened to x < 0.12.
+  // Faders: any fingertip in the left strip drives fader value from Y position.
+  // No pinch required — just hold your hand in the zone.
   const tip = gs.fingertips && gs.fingertips[1];
-  if (gs.pinchActive && tip && tip.x < 0.12) {
+  if (tip && tip.x < 0.16) {
     const y = tip.y;
-    // Fader block spans y 0.22–0.46 (two stacked faders)
     if (y >= 0.20 && y < 0.34) {
-      const v = 1 - (y - 0.22) / 0.12;
+      const v = 1 - (y - 0.20) / 0.14;
       setFader('cutoff', Math.max(0, Math.min(1, v)));
     } else if (y >= 0.34 && y <= 0.48) {
-      const v = 1 - (y - 0.34) / 0.12;
+      const v = 1 - (y - 0.34) / 0.14;
       setFader('resonance', Math.max(0, Math.min(1, v)));
     }
   }
@@ -226,6 +224,15 @@ function update(gs) {
     const semis = Math.max(-12, Math.min(12, -gs.pinchDragY / 20));
     state.micPitch.pitch = semis;
   }
+}
+
+function getKeyNotes() {
+  // 7 MIDI notes for the scale-degree pads, wrapping to next octave if needed
+  const intervals = SCALES[state.activeScale] || SCALES.MAJOR;
+  return Array.from({ length: 7 }, (_, i) => {
+    if (i < intervals.length) return ROOT_MIDI + intervals[i];
+    return ROOT_MIDI + 12 + intervals[i % intervals.length];
+  });
 }
 
 function getActiveScale() { return state.activeScale; }
@@ -252,6 +259,7 @@ export default {
   getActiveScale,
   getFaders,
   getStringNote,
+  getKeyNotes,
   getDestinationStream,
   isReady,
   SCALE_ORDER,

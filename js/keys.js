@@ -1,154 +1,109 @@
-// Piano keyboard: 2 octaves (C3–B4), 14 white keys, black keys on top.
-// Owns hit testing + press state; canvas.js draws.
+// Scale-degree pads — replaces piano keyboard.
+// 7 large pads spanning the lower area of the screen.
+// Any fingertip (all hands, all 5 fingers) entering a pad triggers
+// that scale degree note. Multiple fingers = chord voicing.
+// No pinch required — just reach into a pad.
 
-import gesture from './gesture.js';
+const DEGREE_LABELS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+const FINGERTIP_INDICES = [4, 8, 12, 16, 20];
+
+const PAD_TOP    = 0.60;
+const PAD_BOTTOM = 0.90;
+const PAD_X0     = 0.04;
+const PAD_X1     = 0.96;
+const N_PADS     = 7;
 
 let audioRef = null;
 let vp = { w: 0, h: 0 };
+let layout = null;
 
-// White key MIDI notes C3..B4
-const WHITE_NOTES = [48,50,52,53,55,57,59,60,62,64,65,67,69,71];
-const NOTE_NAMES = {
-  48:'C3',50:'D3',52:'E3',53:'F3',55:'G3',57:'A3',59:'B3',
-  60:'C4',62:'D4',64:'E4',65:'F4',67:'G4',69:'A4',71:'B4',
-  49:'C#3',51:'D#3',54:'F#3',56:'G#3',58:'A#3',
-  61:'C#4',63:'D#4',66:'F#4',68:'G#4',70:'A#4',
-};
-// Black keys between whites. Index = position between two white keys (i and i+1).
-const BLACK_BETWEEN = [
-  // (indexOfLowerWhiteKey, blackMidi)
-  [0, 49],[1, 51],
-  [3, 54],[4, 56],[5, 58],
-  [7, 61],[8, 63],
-  [10, 66],[11, 68],[12, 70],
-];
-
-const state = {
-  layout: null,
-  hoveredIndex: null,
-  activeNotes: new Map(), // midi -> { triggeredAt }
-  scaleNotes: null,
-};
+// fingerKey (`${handIdx}-${tipIdx}`) -> midiNote currently held
+const fingerNotes = new Map();
 
 function init(audio) {
   audioRef = audio;
 }
 
-function computeLayout(viewport) {
-  const vw = viewport.w;
-  const vh = viewport.h;
-  const xStart = vw * 0.10;
-  const xEnd = vw * 0.90;
-  const playableW = xEnd - xStart;
-  const keyWidth = playableW / 14;
-  const whiteH = vh * 0.22;
-  const blackW = keyWidth * 0.6;
-  const blackH = vh * 0.13;
-  const bandTop = vh * 0.60;
-  const whites = WHITE_NOTES.map((midi, i) => ({
-    midi,
-    x: xStart + i * keyWidth,
-    y: bandTop,
-    w: keyWidth,
-    h: whiteH,
-    name: NOTE_NAMES[midi],
-  }));
-  const blacks = BLACK_BETWEEN.map(([i, midi]) => ({
-    midi,
-    x: xStart + (i + 1) * keyWidth - blackW / 2,
-    y: bandTop,
-    w: blackW,
-    h: blackH,
-    name: NOTE_NAMES[midi],
-  }));
+function computeLayout() {
+  const vw = vp.w, vh = vp.h;
+  const totalW = (PAD_X1 - PAD_X0) * vw;
+  const gapPx  = vw * 0.007;
+  const padW   = (totalW - gapPx * (N_PADS - 1)) / N_PADS;
+  const padH   = (PAD_BOTTOM - PAD_TOP) * vh;
+  const padY   = PAD_TOP * vh;
   return {
-    whites,
-    blacks,
-    bandTop,
-    bandBottom: bandTop + whiteH,
-    hitTest(px, py) {
-      // Black keys first (they overlap white keys)
-      if (py >= bandTop && py <= bandTop + blackH) {
-        for (const b of blacks) {
-          if (px >= b.x && px <= b.x + b.w) return { kind: 'black', midi: b.midi };
-        }
-      }
-      if (py >= bandTop && py <= bandTop + whiteH) {
-        for (const w of whites) {
-          if (px >= w.x && px <= w.x + w.w) return { kind: 'white', midi: w.midi };
-        }
-      }
-      return null;
-    },
+    pads: Array.from({ length: N_PADS }, (_, i) => ({
+      index: i,
+      x: PAD_X0 * vw + i * (padW + gapPx),
+      y: padY,
+      w: padW,
+      h: padH,
+      label: DEGREE_LABELS[i],
+    })),
   };
 }
 
 function resize(viewport) {
   vp = viewport;
-  state.layout = computeLayout(viewport);
-  // Publish layout into gesture module so hover detection works downstream.
-  gesture.setLayout({
-    keyBand: { top: state.layout.bandTop, bottom: state.layout.bandBottom },
-    keyLayout: { hitTest: (x, y) => {
-      const r = state.layout.hitTest(x, y);
-      return r ? r.midi : null;
-    } },
-    stringYs: undefined,
-  });
+  layout = computeLayout();
 }
 
-function update(gs) {
-  if (!gs || !state.layout) return;
-  state.hoveredIndex = gs.hoveredKeyIndex ?? null;
-
-  // Press each key newly grabbed this frame (one per pinching hand)
-  if (gs.keyPresses && gs.keyPresses.length) {
-    for (const midi of gs.keyPresses) triggerPress(midi);
-  }
-
-  // Release each key whose pinch just opened
-  if (gs.keyReleases && gs.keyReleases.length) {
-    for (const midi of gs.keyReleases) triggerRelease(midi);
-  }
-
-  // Safety: long-held notes release after 6s
-  const now = performance.now();
-  for (const [midi, info] of state.activeNotes) {
-    if (now - info.triggeredAt > 6000) triggerRelease(midi);
-  }
-
-  state.scaleNotes = computeScaleNotes(audioRef);
+function midiForPad(padIdx) {
+  const notes = audioRef?.getKeyNotes?.();
+  return notes?.[padIdx] ?? (60 + padIdx);
 }
 
-function triggerPress(midi) {
-  if (audioRef) audioRef.keyOn(midi, 0.85);
-  state.activeNotes.set(midi, { triggeredAt: performance.now() });
-}
+function update(gs, allHands) {
+  if (!layout || !allHands) return;
 
-function triggerRelease(midi) {
-  if (audioRef) audioRef.keyOff(midi);
-  state.activeNotes.delete(midi);
-}
+  const activeTips = new Map(); // fingerKey -> padIdx
 
-function computeScaleNotes(audio) {
-  if (!audio || !audio.SCALES) return null;
-  const scale = audio.SCALES[audio.getActiveScale()];
-  const root = audio.ROOT_MIDI;
-  const set = new Set();
-  for (let oct = -2; oct <= 2; oct++) {
-    scale.forEach((iv) => set.add(root + oct * 12 + iv));
+  for (let h = 0; h < Math.min(allHands.length, 2); h++) {
+    const hand = allHands[h];
+    if (!hand) continue;
+    for (const tipIdx of FINGERTIP_INDICES) {
+      const tip = hand[tipIdx];
+      if (!tip) continue;
+      const px = tip.x * vp.w;
+      const py = tip.y * vp.h;
+      for (const pad of layout.pads) {
+        if (px >= pad.x && px < pad.x + pad.w && py >= pad.y && py < pad.y + pad.h) {
+          activeTips.set(`${h}-${tipIdx}`, pad.index);
+          break;
+        }
+      }
+    }
   }
-  return set;
+
+  // Note ons for newly entered pads
+  for (const [key, padIdx] of activeTips) {
+    const midi = midiForPad(padIdx);
+    const prev = fingerNotes.get(key);
+    if (prev !== midi) {
+      if (prev != null) { try { audioRef.keyOff(prev); } catch (_) {} }
+      try { audioRef.keyOn(midi, 0.72); } catch (_) {}
+      fingerNotes.set(key, midi);
+    }
+  }
+
+  // Note offs for fingertips that left pads
+  for (const [key, midi] of fingerNotes) {
+    if (!activeTips.has(key)) {
+      try { audioRef.keyOff(midi); } catch (_) {}
+      fingerNotes.delete(key);
+    }
+  }
 }
 
 function getStates() {
-  return {
-    layout: state.layout,
-    hoveredIndex: state.hoveredIndex,
-    activeNotes: state.activeNotes,
-    scaleNotes: state.scaleNotes,
-    noteNames: NOTE_NAMES,
-  };
+  if (!layout) return null;
+  const keyNotes = audioRef?.getKeyNotes?.() || [];
+  const activePadIndices = new Set();
+  for (const midi of fingerNotes.values()) {
+    const idx = keyNotes.indexOf(midi);
+    if (idx >= 0) activePadIndices.add(idx);
+  }
+  return { layout, activePadIndices, keyNotes };
 }
 
 export default { init, resize, update, getStates };
